@@ -164,9 +164,13 @@ function getConstraints(um = [], options = {}) {
                 echoCancellation: !disableAEC && !disableAP,
                 noiseSuppression: !disableNS && !disableAP
             };
-            if (stereo) {
-                Object.assign(constraints.audio, { channelCount: 2 });
-            }
+            // Microphones stay mono even in a stereo conference. Stereo is here
+            // for screen share audio — a game or a video mixed for two channels
+            // — and ScreenObtainer already requests two for that track. A
+            // microphone has one capsule, so its second channel is a copy of
+            // the first, and sending it costs bitrate for every participant to
+            // gain nothing.
+            Object.assign(constraints.audio, { channelCount: 1 });
         } else {
             const allowedAudioProps = {
                 autoGainControl: 'boolean',
