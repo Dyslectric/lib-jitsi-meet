@@ -141,17 +141,25 @@ export default class LocalSdpMunger {
         }
 
         const transformer = new SdpTransformWrap(sessionDesc.sdp);
-        const audioMLine = transformer.selectMedia(MediaType.AUDIO)?.[0];
 
-        if (audioMLine) {
-            this._transformMediaIdentifiers(audioMLine, ssrcMap);
-        }
+        // Every m-line of both kinds, rather than every video m-line and the first audio one.
+        //
+        // When multiple video streams arrived, the video half of this was generalised to a loop and the audio half
+        // was left at [0]. Nothing noticed, because nothing published a second audio source: the flag that permits
+        // one is a testing flag. The moment something does — a screen share sending its sound as a source of its own
+        // — the second audio m-line goes through here untouched, so no `name:` attribute is injected for its SSRC.
+        //
+        // The failure is a long way from the cause. The source-add that follows takes its source name from that
+        // attribute, so it goes out with an SSRC and no name; the receiving end stores an owner with no source name,
+        // creates a remote track it cannot attribute, and the sound arrives audible but anonymous — belonging to no
+        // source, so no volume control and no mute can find it.
+        for (const mediaType of [ MediaType.AUDIO, MediaType.VIDEO ]) {
+            const mLines = transformer.selectMedia(mediaType);
 
-        const videoMlines = transformer.selectMedia(MediaType.VIDEO);
-
-        if (videoMlines && Array.isArray(videoMlines)) {
-            for (const videoMLine of videoMlines) {
-                this._transformMediaIdentifiers(videoMLine, ssrcMap);
+            if (mLines && Array.isArray(mLines)) {
+                for (const mLine of mLines) {
+                    this._transformMediaIdentifiers(mLine, ssrcMap);
+                }
             }
         }
 
