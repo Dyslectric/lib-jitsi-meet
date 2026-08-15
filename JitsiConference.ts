@@ -76,6 +76,7 @@ import { SignalingEvents } from './service/RTC/SignalingEvents';
 import {
     getMediaTypeFromSourceName,
     getSourceNameForJitsiTrack,
+    isSecondaryAudioSourceName,
     isTranslatedSourceName
 } from './service/RTC/SignalingLayer';
 import { VideoType } from './service/RTC/VideoType';
@@ -1100,7 +1101,10 @@ export default class JitsiConference extends Listenable {
         // Add event handlers.
         this._unsubscribers.push(newTrack.addCancellableListener(JitsiTrackEvents.TRACK_MUTE_CHANGED, this._fireMuteChangeEvent.bind(this, newTrack)));
 
-        if (newTrack.isAudioTrack()) {
+        // Not the sound of a screen share, for the reason the remote side gives: these levels are reported as the
+        // local user, so whatever a shared window is playing would read as them speaking — in their own view of the
+        // room as well as in everyone else's.
+        if (newTrack.isAudioTrack() && !isSecondaryAudioSourceName(newTrack.getSourceName())) {
             this._unsubscribers.push(newTrack.addCancellableListener(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED, this._fireAudioLevelChangeEvent.bind(this)));
         }
 
@@ -4064,16 +4068,24 @@ export default class JitsiConference extends Listenable {
             () => emitter.emit(JitsiConferenceEvents.TRACK_MUTE_CHANGED, track));
         // Skip translated audio tracks. They share the participant id with the original source and would
         // otherwise clobber the original speaker's levels on the conference-level event.
-        track.isAudioTrack() && !isTranslatedSourceName(track.getSourceName()) && track.addEventListener(
-            JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED,
-            (audioLevel: number, tpc: TraceablePeerConnection) => {
-                const activeTPC = this.getActivePeerConnection();
+        //
+        // And the sound of a screen share, for the same reason and to the same end: it is reported against the
+        // endpoint sharing it, so a film playing in a shared window reads as that person talking for as long as it
+        // runs — in the tile's speaker indicator, and in anything else built on these levels.
+        if (track.isAudioTrack()
+                && !isTranslatedSourceName(track.getSourceName())
+                && !isSecondaryAudioSourceName(track.getSourceName())) {
+            track.addEventListener(
+                JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED,
+                (audioLevel: number, tpc: TraceablePeerConnection) => {
+                    const activeTPC = this.getActivePeerConnection();
 
-                if (activeTPC === tpc) {
-                    emitter.emit(JitsiConferenceEvents.TRACK_AUDIO_LEVEL_CHANGED, id, audioLevel);
+                    if (activeTPC === tpc) {
+                        emitter.emit(JitsiConferenceEvents.TRACK_AUDIO_LEVEL_CHANGED, id, audioLevel);
+                    }
                 }
-            }
-        );
+            );
+        }
 
         emitter.emit(JitsiConferenceEvents.TRACK_ADDED, track);
     }

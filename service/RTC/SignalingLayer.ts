@@ -111,6 +111,21 @@ export function isTranslatedSourceName(sourceName?: SourceName | null): boolean 
 }
 
 /**
+ * Checks whether the given source name belongs to an endpoint's second or later audio source, which by the
+ * convention of the application above this library is the sound of a screen share rather than a microphone: an
+ * endpoint's microphone is its {@code -a0} and a share, published afterwards, takes the next index.
+ *
+ * It matters for audio levels. Levels are reported against the endpoint, not the source, so a shared video would
+ * count as its sharer talking — which is a speaker indicator that lights up for the length of a film.
+ *
+ * @param {SourceName} sourceName - The source name to check (callers may pass a null/undefined source name).
+ * @returns {boolean}
+ */
+export function isSecondaryAudioSourceName(sourceName?: SourceName | null): boolean {
+    return typeof sourceName === 'string' && (/-a[1-9]\d*$/).test(sourceName);
+}
+
+/**
  * An object that carries the info about specific media type advertised by
  * participant in the signaling channel.
  * @typedef {Object} IPeerMediaInfo
