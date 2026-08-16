@@ -74,7 +74,9 @@ import {
 } from './service/RTC/ReceiverAudioSubscription';
 import { SignalingEvents } from './service/RTC/SignalingEvents';
 import {
+    SourceName,
     getMediaTypeFromSourceName,
+    getSourceIndexFromSourceName,
     getSourceNameForJitsiTrack,
     isSecondaryAudioSourceName,
     isTranslatedSourceName
@@ -1079,6 +1081,40 @@ export default class JitsiConference extends Listenable {
     }
 
     /**
+   * The name to give the next local source of a media type: the lowest index no local source of that type is
+   * already using.
+   *
+   * Counting the tracks instead, which is what this replaced, hands out an index that is already taken as soon as an
+   * endpoint has two sources of one type and loses the earlier of them. Sharing a screen's sound publishes a second
+   * audio source, so changing microphone mid-share would count one track and name the new microphone -a1 — the name
+   * the share is already going out under. Two sources with one name is not a cosmetic problem: the far end keys a
+   * remote track's owner, volume and mute on it, so one of the pair takes the other's, and the -a0 that audio
+   * translation addresses a microphone by would no longer be a microphone.
+   *
+   * @param {MediaType} mediaType - The media type of the source being named.
+   * @returns {SourceName}
+   */
+    private _nextSourceNameFor(mediaType: MediaType): SourceName {
+        const taken = new Set<number>();
+
+        for (const track of this.getLocalTracks(mediaType) ?? []) {
+            const sourceName = track.getSourceName();
+
+            if (sourceName) {
+                taken.add(getSourceIndexFromSourceName(sourceName));
+            }
+        }
+
+        let index = 0;
+
+        while (taken.has(index)) {
+            index++;
+        }
+
+        return getSourceNameForJitsiTrack(this.myUserId(), mediaType, index);
+    }
+
+    /**
    * Operations related to creating a new track.
    * @param {JitsiLocalTrack} newTrack - The new track being created.
    */
@@ -1086,12 +1122,7 @@ export default class JitsiConference extends Listenable {
         const mediaType = newTrack.getType();
 
         if (!newTrack.getSourceName()) {
-            const sourceName = getSourceNameForJitsiTrack(
-            this.myUserId(),
-            mediaType,
-            this.getLocalTracks(mediaType)?.length);
-
-            newTrack.setSourceName(sourceName);
+            newTrack.setSourceName(this._nextSourceNameFor(mediaType));
         }
 
         this.rtc.addLocalTrack(newTrack);
@@ -3319,12 +3350,12 @@ export default class JitsiConference extends Listenable {
                 this.options.config.testing?.allowMultipleTracks
                 || (mediaType === MediaType.VIDEO && !localTracks.find(t =>
                     t.getVideoType() === track.getVideoType()))) {
-                const sourceName = getSourceNameForJitsiTrack(
-                    this.myUserId(),
-                    mediaType,
-                    this.getLocalTracks(mediaType)?.length);
-
-                track.setSourceName(sourceName);
+                // Kept if the caller has already named it, as _setupNewTrack does with the same question. A caller
+                // that names a source is saying something the count cannot: the sound of a screen share is not the
+                // endpoint's microphone whether or not it happens to have one, and must not be handed -a0 by an
+                // endpoint that joined without a microphone and then be indistinguishable from the one it grants
+                // later.
+                track.setSourceName(track.getSourceName() || this._nextSourceNameFor(mediaType));
                 const addTrackPromises = [];
 
                 this.p2pJingleSession && addTrackPromises.push(this.p2pJingleSession.addTracks([ track ]));
@@ -3401,14 +3432,9 @@ export default class JitsiConference extends Listenable {
         }
 
         if (newTrack) {
-            const sourceName = oldTrack
-                ? oldTrack.getSourceName()
-                : getSourceNameForJitsiTrack(
-                    this.myUserId(),
-                    mediaType,
-                    this.getLocalTracks(mediaType)?.length);
-
-            newTrack.setSourceName(sourceName);
+            newTrack.setSourceName(oldTrack?.getSourceName()
+                || newTrack.getSourceName()
+                || this._nextSourceNameFor(mediaType));
         }
         const oldTrackBelongsToConference = this === oldTrack?.conference;
 

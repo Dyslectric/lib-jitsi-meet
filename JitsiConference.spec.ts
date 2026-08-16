@@ -1,8 +1,42 @@
+import { MediaType } from './service/RTC/MediaType';
 import { XMPPEvents } from './service/xmpp/XMPPEvents';
+import JitsiConference from './JitsiConference';
 import { JitsiConferenceEvents } from './JitsiConferenceEvents';
 import JitsiConferenceEventManager from './JitsiConferenceEventManager';
 
 describe('JitsiConference', () => {
+    describe('naming a new local source', () => {
+        // Exercised against the prototype: the rule is about the names already handed out and nothing else, and a
+        // whole conference would only be scaffolding around the two things it asks for.
+        const nextSourceNameFor = (sourceNames: (string | undefined)[], mediaType = MediaType.AUDIO) =>
+            (JitsiConference.prototype as any)._nextSourceNameFor.call({
+                myUserId: () => 'abc123',
+                getLocalTracks: () => sourceNames.map(sourceName => ({ getSourceName: () => sourceName }))
+            }, mediaType);
+
+        it('starts at zero', () => {
+            expect(nextSourceNameFor([])).toBe('abc123-a0');
+        });
+
+        it('takes the next index after the ones in use', () => {
+            expect(nextSourceNameFor([ 'abc123-a0' ])).toBe('abc123-a1');
+        });
+
+        it('takes an index freed by a source that has gone, rather than one still in use', () => {
+            // The microphone of somebody who changes device mid-share: one audio track left, and counting it would
+            // name the new microphone -a1, which is the name the share is already going out under.
+            expect(nextSourceNameFor([ 'abc123-a1' ])).toBe('abc123-a0');
+        });
+
+        it('counts each media type separately', () => {
+            expect(nextSourceNameFor([], MediaType.VIDEO)).toBe('abc123-v0');
+        });
+
+        it('ignores a track that has not been named yet', () => {
+            expect(nextSourceNameFor([ 'abc123-a0', undefined ])).toBe('abc123-a1');
+        });
+    });
+
     describe('JitsiConferenceEvents message handling', () => {
         let conference;
         let eventManager;
