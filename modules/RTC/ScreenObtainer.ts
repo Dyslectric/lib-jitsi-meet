@@ -95,13 +95,21 @@ interface ILegacyVideoConstraints {
 }
 
 /**
+ * Interface for one dimension of a modern video constraint.
+ */
+interface IDimensionConstraint {
+    ideal?: number;
+    max?: number;
+}
+
+/**
  * Interface for modern video constraints.
  */
 interface IVideoConstraints {
     displaySurface?: string;
     frameRate?: IFrameRateConfig;
-    height?: number;
-    width?: number;
+    height?: IDimensionConstraint;
+    width?: IDimensionConstraint;
 }
 
 /**
@@ -155,6 +163,24 @@ interface IScreenCaptureResult {
  * The default frame rate for Screen Sharing.
  */
 export const SS_DEFAULT_FRAME_RATE = 5;
+
+/**
+ * The default ceiling on the size of a captured screen share, as a box the
+ * frame is fitted inside rather than a resolution it is forced to. A 4K screen
+ * is therefore sent as 1920x1080, a 4:3 monitor as 1440x1080 and an ultrawide as
+ * 1920x800 — whichever edge reaches the box first decides, and the aspect ratio
+ * is never altered.
+ *
+ * The ceiling is applied at capture, so the frame is scaled once by the
+ * capturer and everything after it — the encoder, the network, the far end —
+ * sees only the smaller image. Overridable through `desktopSharingResolution`.
+ */
+export const SS_DEFAULT_MAX_HEIGHT = 1080;
+
+/**
+ * The horizontal half of {@link SS_DEFAULT_MAX_HEIGHT}.
+ */
+export const SS_DEFAULT_MAX_WIDTH = 1920;
 
 /**
  * Handles obtaining a stream from a screen capture on different browsers.
@@ -402,6 +428,16 @@ class ScreenObtainer {
         // browsers. getDisplayMedia will fail with an error "invalid constraints" in this case.
         video.frameRate && delete video.frameRate.min;
 
+        // Fit the capture inside a box rather than ask for a resolution. Only 'max' is set, so the capturer keeps
+        // the surface's own aspect ratio and scales down only when an edge does not fit: a 4K screen becomes
+        // 1920x1080, a 4:3 monitor 1440x1080, an ultrawide 1920x800. Asking for a size instead would let the
+        // capturer pad the frame to reach it.
+        const maxHeight = this.options?.desktopSharingResolution?.height?.max ?? SS_DEFAULT_MAX_HEIGHT;
+        const maxWidth = this.options?.desktopSharingResolution?.width?.max ?? SS_DEFAULT_MAX_WIDTH;
+
+        video.height = { max: maxHeight };
+        video.width = { max: maxWidth };
+
         if (browser.isChromiumBased()) {
             // Show users the current tab is the preferred capture source, default: false.
             browser.isEngineVersionGreaterThan(93)
@@ -426,9 +462,12 @@ class ScreenObtainer {
             // Set bogus resolution constraints to work around
             // https://bugs.chromium.org/p/chromium/issues/detail?id=1056311 for low fps screenshare. Capturing SS at
             // very high resolutions restricts the framerate. Therefore, skip this hack when capture fps > 5 fps.
+            //
+            // Unreachable by design: the ideal is beyond any display, so it asks for the largest frame permitted,
+            // which the 'max' set above now makes the ceiling rather than the panel.
             if (!(desktopSharingFrameRate?.max > SS_DEFAULT_FRAME_RATE)) {
-                video.height = 99999;
-                video.width = 99999;
+                video.height.ideal = 99999;
+                video.width.ideal = 99999;
             }
         }
 
@@ -464,9 +503,18 @@ class ScreenObtainer {
                         minFps = desktopSharingFrameRate.min;
                     }
 
+                    // The ceiling is repeated here because applyConstraints replaces a track's constraints rather
+                    // than adding to them, so a call carrying only a frame rate would lift it — and a surface
+                    // switched mid-share would then be captured at whatever size it happens to be.
                     const trackConstraints: any = {
                         frameRate: {
                             min: minFps
+                        },
+                        height: {
+                            max: maxHeight
+                        },
+                        width: {
+                            max: maxWidth
                         }
                     };
 
