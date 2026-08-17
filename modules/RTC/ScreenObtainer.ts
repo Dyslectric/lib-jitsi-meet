@@ -428,7 +428,10 @@ class ScreenObtainer {
         } = options;
 
         if (typeof desktopSharingFrameRate === 'object') {
-            video.frameRate = desktopSharingFrameRate;
+            // A copy, because the 'min' below has to come out of it and the object is not this method's to edit:
+            // it belongs to the call, or to this module's own options, and deleting from the latter erased the
+            // configured minimum for every share the page made afterwards.
+            video.frameRate = { ...desktopSharingFrameRate };
         }
 
         // At the time of this writing 'min' constraint for fps is not supported by getDisplayMedia on any of the
@@ -504,15 +507,28 @@ class ScreenObtainer {
                 // https://bugs.chromium.org/p/webrtc/issues/detail?id=15539
                 if (browser.isChromiumBased()) {
                     const track = stream.getVideoTracks()[0];
+                    const maxFps = desktopSharingFrameRate?.max;
                     let minFps = SS_DEFAULT_FRAME_RATE;
 
                     if (typeof desktopSharingFrameRate?.min === 'number' && desktopSharingFrameRate.min > 0) {
                         minFps = desktopSharingFrameRate.min;
                     }
 
-                    // The ceiling is repeated here because applyConstraints replaces a track's constraints rather
-                    // than adding to them, so a call carrying only a frame rate would lift it — and a surface
-                    // switched mid-share would then be captured at whatever size it happens to be.
+                    // A floor above the ceiling cannot be satisfied. applyConstraints answers that with a rejected
+                    // promise, which the try below does not catch, so the two are reconciled before it is called.
+                    if (typeof maxFps === 'number') {
+                        minFps = Math.min(minFps, maxFps);
+                    }
+
+                    // Everything the capture was asked for is repeated here, because applyConstraints REPLACES a
+                    // track's constraints rather than adding to them: anything left out is not merely unchanged,
+                    // it is unset, and the track falls back to the platform's default for it.
+                    //
+                    // The frame rate is the one that mattered. Measured on Windows with a track captured at each
+                    // rate and then handed this call: 5 fps became 29, 60 fps became 29, and getSettings() reported
+                    // 30 in every case -- Chromium's default for display capture. The ceiling chosen for the share
+                    // survived capture and was thrown away one line later, which made every frame rate a
+                    // deployment or a sharer could choose look exactly alike.
                     const trackConstraints: any = {
                         frameRate: {
                             min: minFps
@@ -524,6 +540,10 @@ class ScreenObtainer {
                             max: maxWidth
                         }
                     };
+
+                    if (typeof maxFps === 'number') {
+                        trackConstraints.frameRate.max = maxFps;
+                    }
 
                     // Set the resolution if it is specified in the options. This is currently only enabled for testing.
                     // Note that this may result in browser crashes if the shared window is resized due to browser bugs
