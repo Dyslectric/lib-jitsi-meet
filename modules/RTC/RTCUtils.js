@@ -637,6 +637,7 @@ class RTCUtils extends Listenable {
             }
 
             const {
+                desktopSharingFrameRate,
                 desktopSharingSourceDevice,
                 desktopSharingSources,
                 resolution
@@ -677,7 +678,16 @@ class RTCUtils extends Listenable {
                     });
             }
 
+            // desktopSharingFrameRate travels with the call rather than being
+            // read from the options this module was initialised with. Both are
+            // honoured -- ScreenObtainer falls back to the configured one when
+            // a call does not carry a rate -- but without passing it here the
+            // per-call parameter it already accepts could never arrive, so a
+            // frame rate chosen while a conference is running had nothing to
+            // reach. The rate is fixed at capture, so this is the only moment
+            // at which choosing one is possible.
             return this._getDesktopMedia({
+                desktopSharingFrameRate,
                 desktopSharingSources,
                 resolution });
         }.bind(this);

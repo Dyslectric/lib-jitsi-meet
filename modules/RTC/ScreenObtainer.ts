@@ -491,7 +491,7 @@ class ScreenObtainer {
 
         getDisplayMedia(constraints)
             .then(stream => {
-                this.setContentHint(stream);
+                this.setContentHint(stream, desktopSharingFrameRate);
 
                 // Apply min fps constraints to the track so that 0Hz mode doesn't kick in.
                 // https://bugs.chromium.org/p/webrtc/issues/detail?id=15539
@@ -602,8 +602,12 @@ class ScreenObtainer {
      * @param {MediaStream} stream - The captured desktop stream.
      * @returns {void}
      */
-    public setContentHint(stream: MediaStream): void {
-        const { desktopSharingFrameRate } = this.options;
+    public setContentHint(stream: MediaStream, frameRate?: IFrameRateConfig): void {
+        // The rate the share is actually being captured at, which is not always the configured one: a conference
+        // can ask for a different rate per call, and the hint has to describe the stream that exists rather than
+        // the default it departed from. Without this a share captured at 5 fps on a deployment configured for 60
+        // would still be announced to the encoder as motion, and be given a budget for movement it does not have.
+        const desktopSharingFrameRate = frameRate ?? this.options.desktopSharingFrameRate;
         const desktopTrack = stream.getVideoTracks()[0];
 
         // Set contentHint on the desktop track based on the fps requested.
