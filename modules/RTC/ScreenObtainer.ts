@@ -296,15 +296,22 @@ class ScreenObtainer {
         if (!this._electronSkipDisplayMedia) {
             // Fall-back to the old API in case of not supported error. This can happen if
             // an old Electron SDK is used with a new Jitsi Meet + lib-jitsi-meet version.
+            //
+            // `options` is forwarded rather than dropped: everything a call chose for this
+            // particular share travels in it, and the method below prefers it over the options
+            // this module was configured with. Losing it here is silent -- the share is created
+            // from the configured defaults and looks entirely healthy -- and on Electron this is
+            // the only route to that method, so a choice made in the UI would reach every browser
+            // and nothing in the desktop app.
             this._obtainScreenFromGetDisplayMedia(onSuccess, err => {
                 if (err.name === JitsiTrackErrors.SCREENSHARING_NOT_SUPPORTED_ERROR) {
                     // Make sure we don't recurse infinitely.
                     this._electronSkipDisplayMedia = true;
-                    this._obtainScreenOnElectron(onSuccess, onFailure);
+                    this._obtainScreenOnElectron(onSuccess, onFailure, options);
                 } else {
                     onFailure(err);
                 }
-            });
+            }, options);
 
             return;
         }
