@@ -329,6 +329,61 @@ describe('Codec Selection', () => {
         });
     });
 
+    describe('when a screen share is limited by cpu', () => {
+        beforeEach(() => {
+            options = {
+                enableAdaptiveMode: true,
+                jvb: {
+                    preferenceOrder: [ 'AV1', 'VP9', 'VP8' ],
+                    screenshareCodec: 'VP9'
+                },
+                p2p: {}
+            };
+            jasmine.clock().install();
+            tpc = new MockPeerConnection('tpc-id', false, false);
+            qualityController = new QualityController(conference, options);
+            spyOn(jingleSession, 'setVideoCodecs');
+        });
+
+        afterEach(() => {
+            jasmine.clock().uninstall();
+        });
+
+        it('switches a vp9 share to av1, never to vp8', async () => {
+            const localTrack = new MockLocalTrack('1', 1080, VideoType.DESKTOP);
+
+            participant1 = new MockParticipant('remote-1');
+            conference.addParticipant(participant1, [ 'av1', 'vp9', 'vp8' ]);
+
+            await nextTick(1000);
+            expect(jingleSession.setVideoCodecs).toHaveBeenCalledWith([ 'av1', 'vp9', 'vp8' ], 'vp9');
+
+            const sourceStats = {
+                avgEncodeTime: 12,
+                codec: CodecMimeType.VP9,
+                encodeResolution: 540,
+                qualityLimitationReason: 'cpu' as any,
+                localTrack: localTrack as any,
+                timestamp: 1,
+                tpc: tpc as any
+            };
+
+            qualityController._encodeTimeStats = new Map();
+            const data = new FixedSizeArray(10);
+
+            data.add(sourceStats);
+            qualityController._encodeTimeStats.set(localTrack.rtcId, data);
+
+            qualityController._performQualityOptimizations(sourceStats);
+            await nextTick(60000);
+
+            // A vp8 share is simulcast, which the Jitsi Meet Android SDK shows as a black tile when it joins a call
+            // where the share is already running.
+            expect(jingleSession.setVideoCodecs).toHaveBeenCalledWith([ 'av1', 'vp9', 'vp8' ], 'av1');
+            expect(jingleSession.setVideoCodecs).not.toHaveBeenCalledWith(jasmine.anything(), 'vp8');
+        });
+    });
+
     describe('When codec switching should not be triggered based on outbound-rtp stats', () => {
         beforeEach(() => {
             options = {

@@ -104,6 +104,12 @@ export const STANDARD_CODEC_SETTINGS = {
  * Video codecs in descending order of complexity for camera and desktop video types based on the results of manual
  * performance tests on different platforms. When a CPU limitation is encountered, client switches the call to use the
  * next codec in the list.
+ *
+ * VP8 is not a step for a screen share. A VP8 share is simulcast, and the Jitsi Meet Android SDK (react-native-webrtc
+ * 124) shows one as a black tile when it joins a call where the share is already running: the phone's decoder keeps
+ * producing frames and none of them reach the renderer. VP9 and AV1 shares, one stream each, render. Leaving VP8 in
+ * the list meant a sharer whose CPU fell behind on VP9 was moved to the one codec those viewers cannot see, so a
+ * CPU-limited VP9 share now goes straight to AV1.
  */
 export const VIDEO_CODECS_BY_COMPLEXITY = {
     'camera': [
@@ -113,7 +119,6 @@ export const VIDEO_CODECS_BY_COMPLEXITY = {
     ],
     'desktop': [
         CodecMimeType.VP9,
-        CodecMimeType.VP8,
         CodecMimeType.AV1
     ]
 };
